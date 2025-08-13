@@ -1,10 +1,13 @@
-import streamlit as st
 import pandas as pd
 import numpy as np
 from sklearn.neighbors import NearestNeighbors
+import streamlit as st
+from tabulate import tabulate
 import matplotlib.pyplot as plt
 
-# ====== Load Data ======
+# ------------------------------
+# Step 1: Load Data from GitHub
+# ------------------------------
 @st.cache_data
 def load_data():
     features_url = "https://raw.githubusercontent.com/Sibabrata29/poleXplore_new/main/polyeXplore%20model%20feature%20%26%20index.xlsx"
@@ -18,72 +21,89 @@ def load_data():
 
 features, index_df, library = load_data()
 
-# ====== User Input ======
-st.title("Polymer Structural Feature Matching Tool")
+# ------------------------------
+# Step 2: User Polymer Name Input
+# ------------------------------
+st.title("Polymer Structural Feature Explorer")
 
 valid_polymers = list(features.index)
-polymer_name = st.selectbox("Select Polymer from Database:", valid_polymers)
 
-st.write(f"### Polymer Investigated: **{polymer_name}**")
+while True:
+    polymer_name_input = st.text_input("Enter the polymer name:").strip()
+    if polymer_name_input:
+        if not polymer_name_input.isalpha():
+            st.error("Polymer name should contain only alphabets.")
+        elif polymer_name_input not in valid_polymers:
+            st.error("Polymer not found in dataset. Please enter a valid polymer name.")
+        else:
+            break
+    st.stop()
 
-feature_names = features.columns.tolist()
+# ------------------------------
+# Step 3: User Feature Scores Input
+# ------------------------------
+feature_names = [
+    "Chain Flexibility", "Rigidity hetero Linkage", "Aromaticity", "Side Group Rigidity",
+    "Chain Packing", "Functional Groups", "H-Bonding", "pi-pi Stacking", "Fused Rings", "Toughening factor"
+]
+
 user_features = []
+st.subheader(f"Enter your feature scores for: {polymer_name_input}")
 for name in feature_names:
-    val = st.number_input(f"{name}:", value=float(features.loc[polymer_name, name]), step=0.1)
+    val = st.number_input(f"{name}:", value=0.0, step=0.5, format="%.2f")
     user_features.append(val)
 
 user_sf_array = np.array(user_features).reshape(1, -1)
 
-# ====== Nearest Neighbor (PPW space) ======
+# ------------------------------
+# Step 4: Calculate User PPW (Hidden)
+# ------------------------------
 user_ppw = user_sf_array.dot(index_df.values)
-ppw_df = pd.DataFrame(features.values.dot(index_df.values),
-                      index=features.index,
-                      columns=index_df.columns)
+user_ppw_array = np.array(user_ppw).reshape(1, -1)
 
+# ------------------------------
+# Step 5: Find 2 Nearest Neighbours
+# ------------------------------
 nbrs_ppw = NearestNeighbors(n_neighbors=2, metric='euclidean')
-nbrs_ppw.fit(ppw_df.values)
-distances, indices = nbrs_ppw.kneighbors(user_ppw)
+nbrs_ppw.fit(features.values.dot(index_df.values))
+distances_ppw, indices_ppw = nbrs_ppw.kneighbors(user_ppw_array)
 
-nearest_polymers = [features.index[i] for i in indices[0]]
+nearest_polymers = [features.index[idx] for idx in indices_ppw[0]]
+distances_list = distances_ppw[0]
 
-# ====== Distance Bar Chart ======
-distances_list = [0.0] + list(distances[0])
-bar_labels = [polymer_name] + nearest_polymers
-colors = ["green", "gold", "red"]
-
-fig_bar, ax_bar = plt.subplots(figsize=(6, 4))
-bars = ax_bar.barh(bar_labels, distances_list, color=colors)
-ax_bar.set_xlabel("Euclidean Distance (Property Space)")
-ax_bar.set_title(f"Similarity to '{polymer_name}'")
-ax_bar.invert_yaxis()
-for bar, dist in zip(bars, distances_list):
-    ax_bar.text(bar.get_width() + 0.02,
-                bar.get_y() + bar.get_height()/2,
-                f"{dist:.2f}", va='center')
-st.pyplot(fig_bar)
-
-# ====== Feature Comparison ======
-compare_df = pd.DataFrame({polymer_name: user_features}, index=feature_names)
-for p in nearest_polymers:
-    compare_df[p] = features.loc[p].values
+# ------------------------------
+# Step 6: Feature Comparison Table
+# ------------------------------
+comparison_df = pd.DataFrame(
+    {polymer_name_input: user_features,
+     nearest_polymers[0]: features.loc[nearest_polymers[0]],
+     nearest_polymers[1]: features.loc[nearest_polymers[1]]},
+    index=feature_names
+)
 
 st.subheader("Structural Feature Comparison")
-st.dataframe(compare_df)
+st.dataframe(comparison_df)
 
-# ====== Grouped Bar Chart ======
-fig, ax = plt.subplots(figsize=(8, 5))
-x = np.arange(len(compare_df.index))
-width = 0.8 / len(compare_df.columns)
-for i, col in enumerate(compare_df.columns):
-    ax.bar(x + i*width, compare_df[col], width, label=col)
-ax.set_ylabel("Feature Score")
-ax.set_xticks(x + width*(len(compare_df.columns)-1)/2)
-ax.set_xticklabels(compare_df.index, rotation=45, ha="right")
-ax.legend()
+# ------------------------------
+# Step 7: Euclidean Distance Bar Chart
+# ------------------------------
+st.subheader("Similarity to User Polymer (Lower = More Similar)")
+
+colors = ["green", "gold"]
+fig, ax = plt.subplots(figsize=(6, 4))
+bars = ax.barh(nearest_polymers, distances_list, color=colors)
+ax.set_xlabel("Euclidean Distance (Property Space)")
+ax.invert_yaxis()
+
+for bar, dist in zip(bars, distances_list):
+    ax.text(bar.get_width() + 0.02, bar.get_y() + bar.get_height()/2,
+            f"{dist:.2f}", va='center')
+
 st.pyplot(fig)
 
-# ====== Display Library Properties ======
+# ------------------------------
+# Step 8: Reference Properties for Matches
+# ------------------------------
+st.subheader("Reference Properties for Nearest Polymers")
 properties_df = library.loc[nearest_polymers].T
-properties_df.columns.name = None
-st.subheader("Reference Properties of Nearest Matches")
-st.dataframe(properties_df)
+st.markdown(tabulate(properties_df, headers='keys', tablefmt='pipe'))
