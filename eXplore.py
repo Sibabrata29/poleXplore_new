@@ -3,6 +3,10 @@ import pandas as pd
 import numpy as np
 from sklearn.neighbors import NearestNeighbors
 import matplotlib.pyplot as plt
+# ---------- PAGE CONFIG ----------
+st.set_page_config(page_title="polyeXplore prediction model", layout="wide")
+st.title("Polymer structural features & property index influence matrix")
+
 
 # --------------------
 # Load data from GitHub
@@ -19,84 +23,76 @@ def load_data():
 
 features, index_df, library = load_data()
 
-# --------------------
-# App Title
-# --------------------
-st.title("Polymer eXplore")
+# ---------- USER INPUT ----------
+poly_name = st.text_input("Enter polymer name to explore (case-sensitive):", "")
 
-feature_names = list(features.columns)
-valid_polymers = list(features.index)
+feature_names = [
+    "Chain Flexibility", "Rigidity hetero Linkage", "Aromaticity",
+    "Side Group Rigidity", "Chain Packing", "Functional Groups",
+    "H-Bonding", "pi-pi Stacking", "Fused Rings", "Toughening factor"
+]
 
-# --------------------
-# User input form
-# --------------------
-with st.form("polymer_form"):
-    polymer_name_input = st.text_input("Enter the polymer name:").strip()
-
-    # Collect feature scores
-    user_features = []
-    for name in feature_names:
-        val = st.number_input(f"Enter your feature score for {name}:", value=0.0, format="%.2f")
-        user_features.append(val)
-
-    submit_button = st.form_submit_button("Submit")
-
-# --------------------
-# After submit
-# --------------------
-if submit_button:
-    # Validation for alphabets only
-    if not polymer_name_input.isalpha():
-        st.error("❌ Polymer name should contain only alphabets.")
-    elif polymer_name_input not in valid_polymers:
-        st.error("❌ Polymer not found in database. Please enter a valid polymer name.")
+user_features = []
+if poly_name:
+    if poly_name not in features.index:
+        st.error("Polymer name not found in dataset.")
     else:
-        # Convert user input to array
-        user_sf_array = np.array(user_features).reshape(1, -1)
+        st.subheader("Enter Feature Scores")
+        for f in feature_names:
+            val = st.number_input(f"{f}:", min_value=-5.0, max_value=10.0, step=0.5)
+            user_features.append(val)
 
-        # Compute user PPW
-        user_ppw = user_sf_array.dot(index_df.values)
+        if st.button("Run Assessment"):
+            # User data arrays
+            user_sf_array = np.array(user_features).reshape(1, -1)
+            user_ppw_array = user_sf_array.dot(index_df.values)
 
-        # Compute PPW for database
-        ppw_df = pd.DataFrame(features.values.dot(index_df.values), index=features.index, columns=index_df.columns)
+            # Find 2 nearest neighbours in PPW space
+            nbrs_ppw = NearestNeighbors(n_neighbors=2, metric='euclidean')
+            nbrs_ppw.fit(ppw_df.values)
+            distances_ppw, indices_ppw = nbrs_ppw.kneighbors(user_ppw_array)
 
-        # Find 2 nearest neighbors (based on PPW)
-        nbrs_ppw = NearestNeighbors(n_neighbors=2, metric="euclidean")
-        nbrs_ppw.fit(ppw_df.values)
-        distances_ppw, indices_ppw = nbrs_ppw.kneighbors(user_ppw)
+            # ---------- Comparison Table ----------
+            comparison_df = pd.DataFrame({f"Data: {poly_name}": features.loc[poly_name].values},
+                                          index=feature_names)
+            comparison_df[f"User Entry: {poly_name}"] = user_features
 
-        nearest_polymers = [features.index[idx] for idx in indices_ppw[0]]
-        distances_list = distances_ppw[0]
+            for idx in indices_ppw[0]:
+                nn_name = features.index[idx]
+                comparison_df[nn_name] = features.loc[nn_name].values
 
-        # --------------------
-        # Feature Comparison Table
-        # --------------------
-        comp_df = pd.DataFrame({polymer_name_input: user_features}, index=feature_names)
-        for p in nearest_polymers:
-            comp_df[p] = features.loc[p].values
+            st.markdown("### Structural Feature Comparison")
+            st.dataframe(comparison_df)
 
-        st.subheader("Structural Feature Comparison")
-        st.dataframe(comp_df)
+            # ---------- Horizontal Bar Chart ----------
+            fig, ax = plt.subplots(figsize=(10, 6))
+            y = np.arange(len(comparison_df.index))
+            height = 0.8 / len(comparison_df.columns)
+            for i, col in enumerate(comparison_df.columns):
+                ax.barh(y + i*height, comparison_df[col], height, label=col)
+            ax.set_yticks(y + height*(len(comparison_df.columns)-1)/2)
+            ax.set_yticklabels(comparison_df.index)
+            ax.set_xlabel("Feature Score")
+            ax.set_title(f"Structural Comparison for '{poly_name}'")
+            ax.legend()
+            st.pyplot(fig)
 
-        # --------------------
-        # Distance Bar Chart
-        # --------------------
-        colors = ["green" if i == 0 else "gold" for i in range(len(nearest_polymers))]
+            # ---------- Nearest neighbour distances ----------
+            nearest_polymers = [features.index[idx] for idx in indices_ppw[0]]
+            distances_display = [0] + list(distances_ppw[0])
+            labels_display = [poly_name] + nearest_polymers
+            colors = ["green"] + ["gold"]*len(nearest_polymers)
 
-        fig, ax = plt.subplots(figsize=(6, 4))
-        bars = ax.barh(nearest_polymers, distances_list, color=colors)
-        ax.set_xlabel("Euclidean Distance (PPW Space)")
-        ax.set_title(f"Similarity to '{polymer_name_input}'")
-        ax.invert_yaxis()
+            fig2, ax2 = plt.subplots()
+            bars = ax2.barh(labels_display, distances_display, color=colors)
+            ax2.invert_yaxis()
+            ax2.set_xlabel("Euclidean Distance (Property Space)")
+            ax2.set_title("Nearest Neighbours")
+            for bar, dist in zip(bars, distances_display):
+                ax2.text(bar.get_width()+0.5, bar.get_y()+bar.get_height()/2, f"{dist:.2f}", va='center')
+            st.pyplot(fig2)
 
-        for bar, dist in zip(bars, distances_list):
-            ax.text(bar.get_width() + 0.02, bar.get_y() + bar.get_height()/2,
-                    f"{dist:.2f}", va='center')
-
-        st.pyplot(fig)
-
-        # --------------------
-        # Reference Properties for Matches
-        # --------------------
-        st.subheader("Reference Properties of Matches")
-        st.dataframe(library.loc[nearest_polymers])
+            # ---------- Reference properties ----------
+            props_df = library.loc[nearest_polymers].T
+            st.markdown("### Reference Properties for Nearest Polymers")
+            st.table(props_df)
