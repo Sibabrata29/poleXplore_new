@@ -3,25 +3,24 @@ import pandas as pd
 import numpy as np
 from sklearn.neighbors import NearestNeighbors
 import matplotlib.pyplot as plt
+
 # ---------- PAGE CONFIG ----------
 st.set_page_config(page_title="polyeXplore prediction model", layout="wide")
-st.title("Polymer structural features & property index influence matrix")
+st.title("Polymer structural features & influence matrix of property index")
 
-
-# --------------------
-# Load data from GitHub
-# --------------------
+# ---------- LOAD DATA ----------
 @st.cache_data
 def load_data():
-    features_url = "https://raw.githubusercontent.com/Sibabrata29/poleXplore_new/main/polyeXplore%20model%20feature%20%26%20index.xlsx"
-    library_url = "https://raw.githubusercontent.com/Sibabrata29/poleXplore_new/main/polyeXplore%20polymer%20library%20data.xlsx"
-
-    features = pd.read_excel(features_url, sheet_name="polyFeature", index_col=0)
-    index_df = pd.read_excel(features_url, sheet_name="polyIndex", index_col=0)
-    library = pd.read_excel(library_url, sheet_name="reference", index_col=0)
+    features = pd.read_excel(r"E:\15 Polyexplore\predictions_polyprop\polyeXplore model feature & index.xlsx", sheet_name="polyFeature", index_col=0)
+    index = pd.read_excel(r"E:\15 Polyexplore\predictions_polyprop\polyeXplore model feature & index.xlsx", sheet_name="polyIndex", index_col=0)
+    library = pd.read_excel(r"E:\15 Polyexplore\predictions_polyprop\polyeXplore polymer library data.xlsx", sheet_name="reference", index_col=0)
     return features, index_df, library
 
 features, index_df, library = load_data()
+
+# Calculate PPW (Property Weightage)
+mmuscores = features.values.dot(index_df.values)
+ppw_df = pd.DataFrame(mmuscores, index=features.index, columns=index_df.columns)
 
 # ---------- USER INPUT ----------
 poly_name = st.text_input("Enter polymer name to explore (case-sensitive):", "")
@@ -95,4 +94,4 @@ if poly_name:
             # ---------- Reference properties ----------
             props_df = library.loc[nearest_polymers].T
             st.markdown("### Reference Properties for Nearest Polymers")
-            st.table(props_df)
+            st.table(props_df)import streamlit as st
