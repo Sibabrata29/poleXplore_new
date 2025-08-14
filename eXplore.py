@@ -94,4 +94,4 @@ if poly_name:
             # ---------- Reference properties ----------
             props_df = library.loc[nearest_polymers].T
             st.markdown("### Reference Properties for Nearest Polymers")
-            st.table(props_df)import streamlit as st
+            st.table(props_df)
